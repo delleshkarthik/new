@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FarmingData } from "./FarmingForm";
+import { cropRecommendationService, CropRecommendation } from "@/services/cropRecommendationService";
+import { useState, useEffect } from "react";
 import { 
   TrendingUp, 
   Droplets, 
@@ -12,27 +14,10 @@ import {
   Calendar,
   IndianRupee,
   AlertTriangle,
-  CheckCircle
+  CheckCircle,
+  Loader2
 } from "lucide-react";
 
-interface CropRecommendation {
-  name: string;
-  profitability: "high" | "medium" | "low";
-  estimatedEarnings: {
-    perAcre: number;
-    total: number;
-  };
-  suitability: number;
-  growthPeriod: string;
-  waterRequirement: "low" | "medium" | "high";
-  inputs: {
-    seeds: string;
-    fertilizers: string[];
-    pesticides: string[];
-  };
-  marketDemand: "high" | "medium" | "low";
-  tips: string[];
-}
 
 interface CropRecommendationsProps {
   data: FarmingData;
@@ -40,136 +25,27 @@ interface CropRecommendationsProps {
 }
 
 const CropRecommendations = ({ data, onNewRecommendation }: CropRecommendationsProps) => {
-  // Enhanced recommendations based on location and input data
-  const generateRecommendations = (): CropRecommendation[] => {
-    // Location-based recommendations (simplified logic for demo)
-    const getLocationBasedCrops = () => {
-      if (data.coordinates) {
-        const { latitude } = data.coordinates;
-        
-        // Northern India (higher latitude)
-        if (latitude > 28) {
-          return {
-            kharif: ["Rice", "Sugarcane", "Cotton"],
-            rabi: ["Wheat", "Barley", "Mustard"],
-            zaid: ["Fodder crops", "Vegetables"]
-          };
-        }
-        // Central India
-        else if (latitude > 20) {
-          return {
-            kharif: ["Cotton", "Soybean", "Maize"],
-            rabi: ["Wheat", "Gram", "Linseed"],
-            zaid: ["Groundnut", "Vegetables"]
-          };
-        }
-        // Southern India (lower latitude)
-        else {
-          return {
-            kharif: ["Rice", "Ragi", "Groundnut"],
-            rabi: ["Rice", "Millets", "Pulses"],
-            zaid: ["Rice", "Vegetables"]
-          };
-        }
+  const [recommendations, setRecommendations] = useState<CropRecommendation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchRecommendations = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const results = await cropRecommendationService.getRecommendations(data);
+        setRecommendations(results);
+      } catch (err) {
+        setError('Failed to get recommendations. Please try again.');
+        console.error('Error fetching recommendations:', err);
+      } finally {
+        setLoading(false);
       }
-      
-      // Default recommendations if no coordinates
-      return {
-        kharif: ["Rice", "Cotton"],
-        rabi: ["Wheat", "Mustard"],
-        zaid: ["Vegetables"]
-      };
     };
 
-    const locationCrops = getLocationBasedCrops();
-    // Enhanced recommendations based on location
-    const baseRecommendations: Record<string, CropRecommendation[]> = {
-      kharif: [
-        {
-          name: "Rice",
-          profitability: "high",
-          estimatedEarnings: { perAcre: 45000, total: 45000 },
-          suitability: 92,
-          growthPeriod: "120-140 days",
-          waterRequirement: "high",
-          inputs: {
-            seeds: "20-25 kg per acre",
-            fertilizers: ["NPK 10:26:26", "Urea", "DAP"],
-            pesticides: ["Carbendazim", "Chlorpyrifos", "2,4-D"]
-          },
-          marketDemand: "high",
-          tips: [
-            "Ensure proper water management during flowering stage",
-            "Apply phosphorus during land preparation",
-            "Monitor for brown plant hopper"
-          ]
-        },
-        {
-          name: "Cotton",
-          profitability: "high",
-          estimatedEarnings: { perAcre: 55000, total: 55000 },
-          suitability: 88,
-          growthPeriod: "180-200 days",
-          waterRequirement: "medium",
-          inputs: {
-            seeds: "1.5-2 kg per acre",
-            fertilizers: ["NPK 12:32:16", "Potash", "Zinc Sulphate"],
-            pesticides: ["Imidacloprid", "Profenofos", "Emamectin Benzoate"]
-          },
-          marketDemand: "high",
-          tips: [
-            "Plant during optimal time (May-June)",
-            "Maintain 60-90cm row spacing",
-            "Regular monitoring for bollworm"
-          ]
-        }
-      ],
-      rabi: [
-        {
-          name: "Wheat",
-          profitability: "high",
-          estimatedEarnings: { perAcre: 40000, total: 40000 },
-          suitability: 95,
-          growthPeriod: "120-150 days",
-          waterRequirement: "medium",
-          inputs: {
-            seeds: "100-125 kg per acre",
-            fertilizers: ["NPK 12:32:16", "Urea", "Zinc"],
-            pesticides: ["Mancozeb", "Propiconazole", "2,4-D"]
-          },
-          marketDemand: "high",
-          tips: [
-            "Sow by end of November for best results",
-            "Maintain proper seed depth (3-5 cm)",
-            "Apply nitrogen in 3 split doses"
-          ]
-        },
-        {
-          name: "Mustard",
-          profitability: "medium",
-          estimatedEarnings: { perAcre: 35000, total: 35000 },
-          suitability: 85,
-          growthPeriod: "90-120 days",
-          waterRequirement: "low",
-          inputs: {
-            seeds: "3-4 kg per acre",
-            fertilizers: ["NPK 18:46:0", "Sulphur", "Boron"],
-            pesticides: ["Dimethoate", "Cypermethrin", "Quinalphos"]
-          },
-          marketDemand: "medium",
-          tips: [
-            "Sow in well-prepared seedbed",
-            "Apply sulphur for better oil content",
-            "Monitor for aphids during flowering"
-          ]
-        }
-      ]
-    };
-
-    return baseRecommendations[data.season] || baseRecommendations.kharif;
-  };
-
-  const recommendations = generateRecommendations();
+    fetchRecommendations();
+  }, [data]);
 
   const getProfitabilityColor = (level: string) => {
     switch (level) {
@@ -189,11 +65,45 @@ const CropRecommendations = ({ data, onNewRecommendation }: CropRecommendationsP
     }
   };
 
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="text-center">
+          <h2 className="text-3xl font-bold text-primary mb-2">
+            Getting Your Personalized Recommendations
+          </h2>
+          <p className="text-muted-foreground mb-8">
+            Analyzing your farm conditions with AI...
+          </p>
+          <div className="flex items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div className="text-center">
+          <h2 className="text-3xl font-bold text-primary mb-2">
+            Unable to Get Recommendations
+          </h2>
+          <p className="text-red-600 mb-4">{error}</p>
+          <Button onClick={onNewRecommendation} variant="outline">
+            Try Again
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="text-center">
         <h2 className="text-3xl font-bold text-primary mb-2">
-          Your Personalized Crop Recommendations
+          Your AI-Powered Crop Recommendations
         </h2>
         <p className="text-muted-foreground">
           Based on your {data.location} farm conditions for {data.season} season
@@ -203,6 +113,9 @@ const CropRecommendations = ({ data, onNewRecommendation }: CropRecommendationsP
             </span>
           )}
         </p>
+        <Badge variant="secondary" className="mt-2 bg-primary/10 text-primary">
+          Powered by AI & Real-time Data
+        </Badge>
       </div>
 
       <div className="grid gap-6">
