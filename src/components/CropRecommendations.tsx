@@ -1,10 +1,10 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { FarmingData } from "./FarmingForm";
-import { cropRecommendationService, CropRecommendation } from "@/services/cropRecommendationService";
 import { useState, useEffect } from "react";
 import { 
   TrendingUp, 
@@ -15,7 +15,9 @@ import {
   IndianRupee,
   AlertTriangle,
   CheckCircle,
-  Loader2
+  Loader2,
+  Key,
+  MessageSquare
 } from "lucide-react";
 
 
@@ -25,26 +27,108 @@ interface CropRecommendationsProps {
 }
 
 const CropRecommendations = ({ data, onNewRecommendation }: CropRecommendationsProps) => {
-  const [recommendations, setRecommendations] = useState<CropRecommendation[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [groqApiKey, setGroqApiKey] = useState(() => {
+    return localStorage.getItem('groq_api_key') || '';
+  });
+  const [recommendation, setRecommendation] = useState<string>('');
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showApiKeyInput, setShowApiKeyInput] = useState(!groqApiKey);
+
+  const saveApiKey = () => {
+    if (groqApiKey.trim()) {
+      localStorage.setItem('groq_api_key', groqApiKey.trim());
+      setShowApiKeyInput(false);
+      generateRecommendation();
+    }
+  };
+
+  const clearApiKey = () => {
+    localStorage.removeItem('groq_api_key');
+    setGroqApiKey('');
+    setShowApiKeyInput(true);
+    setRecommendation('');
+  };
+
+  const generateRecommendation = async () => {
+    if (!groqApiKey.trim()) {
+      setError('Please enter your Groq API key first');
+      setShowApiKeyInput(true);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const prompt = `You are an expert agricultural advisor with deep knowledge of Indian farming practices. Based on the following farming conditions, provide detailed and conversational crop recommendations:
+
+**Farm Details:**
+- Location: ${data.location}
+- Season: ${data.season}
+- Soil Type: ${data.soilType}
+- Climate: ${data.climate}
+- Temperature: ${data.temperature}
+- Additional Information: ${data.additionalInfo}
+${data.coordinates ? `- GPS Coordinates: ${data.coordinates.latitude}, ${data.coordinates.longitude}` : ''}
+
+Please provide a detailed, conversational response that includes:
+1. The most profitable and suitable crops for these conditions
+2. Expected earnings per acre in INR
+3. Specific cultivation tips and best practices
+4. Water requirements and irrigation advice
+5. Market demand and timing recommendations
+6. Input requirements (seeds, fertilizers, pesticides)
+
+Write as if you're having a friendly conversation with a farmer, providing practical and actionable advice. Be specific about the location and conditions mentioned.`;
+
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${groqApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'llama-3.1-70b-versatile',
+          messages: [
+            {
+              role: 'system',
+              content: 'You are an expert agricultural advisor specializing in Indian farming. Provide detailed, practical, and conversational advice to farmers.'
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          temperature: 0.7,
+          max_tokens: 2000,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Groq API error: ${response.status} ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      const aiResponse = result.choices[0]?.message?.content;
+
+      if (!aiResponse) {
+        throw new Error('No response received from Groq AI');
+      }
+
+      setRecommendation(aiResponse);
+    } catch (err: any) {
+      setError(err.message || 'Failed to get recommendations from Groq AI');
+      console.error('Groq API Error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchRecommendations = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const results = await cropRecommendationService.getRecommendations(data);
-        setRecommendations(results);
-      } catch (err) {
-        setError('Failed to get recommendations. Please try again.');
-        console.error('Error fetching recommendations:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchRecommendations();
+    if (groqApiKey && !showApiKeyInput) {
+      generateRecommendation();
+    }
   }, [data]);
 
   const getProfitabilityColor = (level: string) => {
@@ -65,15 +149,69 @@ const CropRecommendations = ({ data, onNewRecommendation }: CropRecommendationsP
     }
   };
 
+  if (showApiKeyInput) {
+    return (
+      <div className="space-y-6">
+        <div className="text-center">
+          <h2 className="text-3xl font-bold text-primary mb-2">
+            Setup Groq AI Integration
+          </h2>
+          <p className="text-muted-foreground mb-8">
+            Enter your Groq API key to get personalized crop recommendations
+          </p>
+        </div>
+
+        <Card className="max-w-md mx-auto">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Key className="h-5 w-5" />
+              Groq API Key
+            </CardTitle>
+            <CardDescription>
+              Your API key will be stored locally in your browser
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="groq-key">API Key</Label>
+              <Input
+                id="groq-key"
+                type="password"
+                placeholder="Enter your Groq API key"
+                value={groqApiKey}
+                onChange={(e) => setGroqApiKey(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && saveApiKey()}
+              />
+            </div>
+            <Button 
+              onClick={saveApiKey} 
+              className="w-full"
+              disabled={!groqApiKey.trim()}
+            >
+              Save API Key & Get Recommendations
+            </Button>
+            <Alert>
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription className="text-xs">
+                Note: Your API key is stored locally and visible in browser dev tools. 
+                Only use this for personal/development purposes.
+              </AlertDescription>
+            </Alert>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="space-y-6">
         <div className="text-center">
           <h2 className="text-3xl font-bold text-primary mb-2">
-            Getting Your Personalized Recommendations
+            Getting Your AI Recommendations
           </h2>
           <p className="text-muted-foreground mb-8">
-            Analyzing your farm conditions with AI...
+            Analyzing your {data.location} farm conditions with Groq AI...
           </p>
           <div className="flex items-center justify-center">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -88,12 +226,20 @@ const CropRecommendations = ({ data, onNewRecommendation }: CropRecommendationsP
       <div className="space-y-6">
         <div className="text-center">
           <h2 className="text-3xl font-bold text-primary mb-2">
-            Unable to Get Recommendations
+            Error Getting Recommendations
           </h2>
-          <p className="text-red-600 mb-4">{error}</p>
-          <Button onClick={onNewRecommendation} variant="outline">
-            Try Again
-          </Button>
+          <Alert variant="destructive" className="max-w-md mx-auto">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+          <div className="flex gap-2 justify-center mt-4">
+            <Button onClick={generateRecommendation} variant="outline">
+              Try Again
+            </Button>
+            <Button onClick={clearApiKey} variant="outline">
+              Change API Key
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -103,162 +249,45 @@ const CropRecommendations = ({ data, onNewRecommendation }: CropRecommendationsP
     <div className="space-y-6">
       <div className="text-center">
         <h2 className="text-3xl font-bold text-primary mb-2">
-          Your AI-Powered Crop Recommendations
+          Your AI Crop Recommendations
         </h2>
         <p className="text-muted-foreground">
-          Based on your {data.location} farm conditions for {data.season} season
-          {data.coordinates && (
-            <span className="block text-sm mt-1 text-green-600">
-              ✓ Location verified using GPS coordinates
-            </span>
-          )}
+          Personalized advice for your {data.location} farm
         </p>
-        <Badge variant="secondary" className="mt-2 bg-primary/10 text-primary">
-          Powered by AI & Real-time Data
-        </Badge>
+        <div className="flex items-center justify-center gap-2 mt-2">
+          <Badge variant="secondary" className="bg-primary/10 text-primary">
+            <MessageSquare className="h-3 w-3 mr-1" />
+            Powered by Groq AI
+          </Badge>
+          <Button 
+            onClick={clearApiKey} 
+            variant="ghost" 
+            size="sm"
+            className="text-xs"
+          >
+            Change API Key
+          </Button>
+        </div>
       </div>
 
-      <div className="grid gap-6">
-        {recommendations.map((crop, index) => (
-          <Card key={index} className="shadow-soft hover:shadow-glow transition-all duration-300">
-            <CardHeader>
-              <div className="flex justify-between items-start">
-                <div>
-                  <CardTitle className="text-2xl text-primary flex items-center gap-2">
-                    <Sprout className="h-6 w-6" />
-                    {crop.name}
-                  </CardTitle>
-                  <CardDescription className="text-lg">
-                    {crop.suitability}% suitable for your conditions
-                  </CardDescription>
-                </div>
-                <div className="text-right">
-                  <Badge className={getProfitabilityColor(crop.profitability)}>
-                    {crop.profitability} profit
-                  </Badge>
-                  <div className="mt-2 flex items-center text-harvest font-bold">
-                    <IndianRupee className="h-4 w-4" />
-                    {crop.estimatedEarnings.perAcre.toLocaleString()}
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    Per acre earnings
-                  </p>
-                </div>
-              </div>
-            </CardHeader>
-            
-            <CardContent>
-              <Tabs defaultValue="overview" className="w-full">
-                <TabsList className="grid w-full grid-cols-4">
-                  <TabsTrigger value="overview">Overview</TabsTrigger>
-                  <TabsTrigger value="inputs">Inputs</TabsTrigger>
-                  <TabsTrigger value="cultivation">Cultivation</TabsTrigger>
-                  <TabsTrigger value="earnings">Earnings</TabsTrigger>
-                </TabsList>
-                
-                <TabsContent value="overview" className="space-y-4">
-                  <div className="grid md:grid-cols-3 gap-4">
-                    <div className="flex items-center gap-2">
-                      <Calendar className="h-5 w-5 text-primary" />
-                      <div>
-                        <p className="font-medium">Growth Period</p>
-                        <p className="text-sm text-muted-foreground">{crop.growthPeriod}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-2">
-                      <Droplets className={`h-5 w-5 ${getWaterColor(crop.waterRequirement)}`} />
-                      <div>
-                        <p className="font-medium">Water Need</p>
-                        <p className="text-sm text-muted-foreground capitalize">{crop.waterRequirement}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-2">
-                      <TrendingUp className="h-5 w-5 text-harvest" />
-                      <div>
-                        <p className="font-medium">Market Demand</p>
-                        <p className="text-sm text-muted-foreground capitalize">{crop.marketDemand}</p>
-                      </div>
-                    </div>
-                  </div>
-                </TabsContent>
-                
-                <TabsContent value="inputs" className="space-y-4">
-                  <div className="grid md:grid-cols-3 gap-4">
-                    <div>
-                      <h4 className="font-medium mb-2 flex items-center gap-2">
-                        <Sprout className="h-4 w-4" />
-                        Seeds
-                      </h4>
-                      <p className="text-sm text-muted-foreground">{crop.inputs.seeds}</p>
-                    </div>
-                    
-                    <div>
-                      <h4 className="font-medium mb-2 flex items-center gap-2">
-                        <CheckCircle className="h-4 w-4" />
-                        Fertilizers
-                      </h4>
-                      <ul className="text-sm text-muted-foreground space-y-1">
-                        {crop.inputs.fertilizers.map((fertilizer, i) => (
-                          <li key={i}>• {fertilizer}</li>
-                        ))}
-                      </ul>
-                    </div>
-                    
-                    <div>
-                      <h4 className="font-medium mb-2 flex items-center gap-2">
-                        <Bug className="h-4 w-4" />
-                        Pesticides
-                      </h4>
-                      <ul className="text-sm text-muted-foreground space-y-1">
-                        {crop.inputs.pesticides.map((pesticide, i) => (
-                          <li key={i}>• {pesticide}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                </TabsContent>
-                
-                <TabsContent value="cultivation" className="space-y-4">
-                  <div>
-                    <h4 className="font-medium mb-2 flex items-center gap-2">
-                      <AlertTriangle className="h-4 w-4" />
-                      Expert Tips
-                    </h4>
-                    <ul className="space-y-2">
-                      {crop.tips.map((tip, i) => (
-                        <li key={i} className="flex items-start gap-2 text-sm">
-                          <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
-                          {tip}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </TabsContent>
-                
-                <TabsContent value="earnings" className="space-y-4">
-                  <div className="bg-gradient-harvest p-6 rounded-lg text-white text-center">
-                    <h4 className="font-medium mb-2">Estimated Earnings Per Acre</h4>
-                    <p className="text-3xl font-bold flex items-center justify-center">
-                      <IndianRupee className="h-6 w-6" />
-                      {crop.estimatedEarnings.perAcre.toLocaleString()}
-                    </p>
-                    <p className="text-sm mt-2 opacity-90">
-                      Based on current market rates and average yields
-                    </p>
-                  </div>
-                  
-                  <p className="text-sm text-muted-foreground text-center">
-                    *Earnings are estimated based on current market prices and average yields. 
-                    Actual results may vary based on market conditions and farming practices.
-                  </p>
-                </TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <Card className="max-w-4xl mx-auto">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Sprout className="h-5 w-5 text-primary" />
+            Farm Analysis & Recommendations
+          </CardTitle>
+          <CardDescription>
+            Based on: {data.season} season • {data.soilType} soil • {data.climate} climate • {data.temperature}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="prose prose-green max-w-none">
+            <div className="whitespace-pre-wrap text-sm leading-relaxed">
+              {recommendation}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="text-center pt-6">
         <Button 
@@ -270,12 +299,20 @@ const CropRecommendations = ({ data, onNewRecommendation }: CropRecommendationsP
           Get New Recommendations
         </Button>
         <Button 
-          onClick={() => window.location.reload()}
+          onClick={generateRecommendation}
           variant="default" 
           size="lg"
           className="bg-gradient-primary"
+          disabled={loading}
         >
-          Back to Home
+          {loading ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Generating...
+            </>
+          ) : (
+            'Regenerate Response'
+          )}
         </Button>
       </div>
     </div>
